@@ -1,3 +1,6 @@
 [submodule "RIOT"]
 	path = RIOT
 	url = https://github.com/RIOT-OS/RIOT.git
+[submodule "chip8emulator"]
+	path = chip8emulator
+	url = https://github.com/thaolt/chip8emulator.git
