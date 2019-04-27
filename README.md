@@ -4,6 +4,12 @@
 
 Download [Prebuilt GNU ARM Embedded Toolchain](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm)
 
+Install GCC Multilib
+
+```
+sudo apt install gcc-multilib
+```
+
 Please remember to change `/path/to/gnu-arm-embed-toolchain/bin` to directory path your machine where the extracted toolchain located.
 
 ```
