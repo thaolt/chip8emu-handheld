@@ -1,58 +1,118 @@
 #include <stdio.h>
-#include <pthread.h>
-#include "chip8emu.h"
 
-#define FACTORIAL_PARAM     (6U)
-#define FACTORIAL_EXPECTED  (720U)
+#include "periph/gpio.h"
+#include "periph/i2c.h"
 
-void *run(void *parameter) {
-    size_t n = (size_t) parameter;
-    size_t factorial = 1;
+#include "xtimer.h"
+#include "u8g2.h"
 
-    printf("pthread: parameter = %u\n", (unsigned int) n);
+/**
+ * @brief   RIOT-OS logo, 64x32 pixels at 8 pixels per byte.
+ */
+static const uint8_t logo[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE0,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0xF8, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x1F, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x3C,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x1E, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x70, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x0E,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x0E, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xF0, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x1E,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3C, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xF0, 0x7C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0xF8,
+    0x30, 0x3C, 0x3F, 0xC0, 0x00, 0x0C, 0x77, 0xF0, 0x38, 0x7E, 0x3F, 0xC0,
+    0x00, 0x7E, 0x73, 0xC0, 0x38, 0xE7, 0x06, 0x00, 0x00, 0xFC, 0x71, 0x00,
+    0x38, 0xE3, 0x06, 0x00, 0x01, 0xF0, 0x70, 0x00, 0x38, 0xE3, 0x06, 0x00,
+    0x01, 0xC0, 0x70, 0x00, 0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x70, 0xC0,
+    0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x71, 0xE0, 0x38, 0xE3, 0x06, 0x00,
+    0x03, 0x80, 0x70, 0xE0, 0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x70, 0xF0,
+    0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x70, 0x70, 0x38, 0xE3, 0x06, 0x00,
+    0x03, 0x80, 0xF0, 0x78, 0x38, 0xE3, 0x06, 0x00, 0x03, 0xC1, 0xE0, 0x3C,
+    0x38, 0xE7, 0x06, 0x00, 0x01, 0xE3, 0xE0, 0x3C, 0x38, 0x7E, 0x06, 0x00,
+    0x01, 0xFF, 0xC0, 0x1C, 0x30, 0x3C, 0x06, 0x00, 0x00, 0x7F, 0x80, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+};
 
-    if (n > 0) {
-        for (size_t i = 1; i <= n; i++) {
-            factorial *= i;
-        }
-    }
+#ifndef NATIVE_BOARD
+/**
+ * @brief   RIOT-OS pin maping of U8g2 pin numbers to RIOT-OS GPIO pins.
+ * @note    To minimize the overhead, you can implement an alternative for
+ *          u8x8_gpio_and_delay_riotos.
+ */
+static gpio_t pins[] = {
+    [U8X8_PIN_I2C_CLOCK] = GPIO_PIN(PORT_B, 8),
+    [U8X8_PIN_I2C_DATA] = GPIO_PIN(PORT_B, 9),
+    [U8X8_PIN_RESET] = GPIO_PIN(PORT_A, 5)
+};
 
-    printf("pthread: factorial = %u\n", (unsigned int) factorial);
-    pthread_exit((void *)factorial);
+/**
+ * @brief   Bit mapping to indicate which pins are set.
+ */
+static uint32_t pins_enabled = (
+    (1 << U8X8_PIN_I2C_CLOCK) +
+    (1 << U8X8_PIN_I2C_DATA) +
+    (1 << U8X8_PIN_RESET)
+);
 
-    return NULL;
-}
+#endif
 
 int main(void)
 {
-    chip8emu *emudev = chip8emu_new();
-    puts("Hello World!");
-    pthread_t th_id;
-    pthread_attr_t th_attr;
+    uint32_t screen = 0;
+    u8g2_t u8g2;
+    
+    /* initialize the display */
+    puts("Initializing display.");
 
-    size_t arg = FACTORIAL_PARAM;
-    printf("main: parameter = %u\n", (unsigned int) arg);
+#ifdef NATIVE_BOARD
+    puts("Initializing to SDL.");
+    u8g2_SetupBuffer_SDL_128x64_4(&u8g2, &u8g2_cb_r0);
+    u8x8_InitDisplay(u8g2_GetU8x8(&u8g2));
+    u8x8_SetPowerSave(u8g2_GetU8x8(&u8g2), 0); 
+#else
+    puts("Initializing to I2C.");
+    // full screen buffer takes 1024 bytes
+    u8g2_Setup_sh1106_i2c_128x64_noname_f(&u8g2, U8G2_R0, u8x8_byte_riotos_hw_i2c, u8x8_gpio_and_delay_riotos);
 
-    pthread_attr_init(&th_attr);
-    pthread_create(&th_id, &th_attr, run, (void *) arg);
-    size_t res;
-    pthread_join(th_id, (void **) &res);
-    printf("main: factorial = %u\n", (unsigned int) res);
+    u8g2_SetPins(&u8g2, pins, pins_enabled);
+    u8g2_SetDevice(&u8g2, I2C_DEV(0));
+    u8g2_SetI2CAddress(&u8g2, 0x3C);
 
-    if (res == FACTORIAL_EXPECTED) {
-        puts("SUCCESS");
+    u8g2_InitDisplay(&u8g2);
+    u8g2_SetPowerSave(&u8g2, 0);
+#endif
+
+
+    /* start drawing in a loop */
+    puts("Drawing on screen.");
+
+    while (1) {
+        u8g2_FirstPage(&u8g2);
+
+        do {
+            u8g2_SetDrawColor(&u8g2, 1);
+            u8g2_SetFont(&u8g2, u8g2_font_helvB12_tf);
+
+            switch (screen) {
+                case 0:
+                    u8g2_DrawStr(&u8g2, 12, 22, "THIS");
+                    break;
+                case 1:
+                    u8g2_DrawStr(&u8g2, 24, 22, "IS");
+                    break;
+                case 2:
+                    u8g2_DrawBitmap(&u8g2, 0, 0, 8, 32, logo);
+                    break;
+            }
+        } while (u8g2_NextPage(&u8g2));
+
+        /* show screen in next iteration */
+        screen = (screen + 1) % 3;
+
+        /* sleep a little */
+        xtimer_sleep(1);
     }
-    else {
-        puts("FAILURE");
-    }
 
-    uint32_t cycles = 0;
-    while (true) {
-        cycles++;
-        chip8emu_exec_cycle(emudev);
-        if (!(cycles%8)) chip8emu_timer_tick(emudev);
-	/* printf("%4X\n", emudev->opcode); */
-    }
     return 0;
 }
-
