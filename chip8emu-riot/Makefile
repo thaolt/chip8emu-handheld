@@ -2,10 +2,8 @@ APPLICATION = chip8emu-riot
 BOARD ?= native
 RIOTBASE ?= $(CURDIR)/../RIOT
 
-
 DEVELHELP ?= 1
 
-# QUIET ?= 0
 
 USEPKG += u8g2
 
@@ -13,30 +11,42 @@ ifeq ($(BOARD),native)
 	USEMODULE += u8g2_sdl
 	CFLAGS += -DNATIVE_BOARD
 else
-	FEATURES_REQUIRED = periph_gpio
-	FEATURES_REQUIRED = periph_i2c
+	FEATURES_REQUIRED += periph_gpio
+	FEATURES_REQUIRED += periph_i2c
+	FEATURES_OPTIONAL += periph_rtc
 endif
-# USEMODULE += u8g2_utf8
 
+USEMODULE += fmt
+
+# threading
 USEMODULE += xtimer
 USEMODULE += random
+USEMODULE += posix_headers
+USEMODULE += pthread
+
+# filesystem
+CFLAGS += -DVFS_FILE_BUFFER_SIZE=72 -DVFS_DIR_BUFFER_SIZE=44
+USEMODULE += vfs
+# USEMODULE += devfs
+# USEMODULE += constfs
+# USEMODULE += spiffs
+USEMODULE += fatfs_vfs
+FATFS_IMAGE_FILE_SIZE_MIB ?= 128
+
+USEMODULE += sdcard_spi
+USEMODULE += mtd_sdcard
+USEMODULE += auto_init_storage
+CFLAGS += -DSDCARD_SPI_PARAM_CS=GPIO_PIN\(PORT_B,6\)
+CFLAGS += -DSDCARD_SPI_PARAM_CLK=GPIO_PIN\(PORT_A,5\)
+CFLAGS += -DSDCARD_SPI_PARAM_MISO=GPIO_PIN\(PORT_A,6\)
+CFLAGS += -DSDCARD_SPI_PARAM_MOSI=GPIO_PIN\(PORT_A,7\)
+
+# shell
 USEMODULE += shell
 USEMODULE += shell_commands
 USEMODULE += ps
-USEMODULE += vfs
-USEMODULE += devfs
-#USEMODULE += littlefs
-# USEMODULE += constfs
 
-
-# Set file systems specific variables
-# ifneq (,$(filter littlefs, $(USEMODULE)))
-#     CFLAGS += -DVFS_FILE_BUFFER_SIZE=56 -DVFS_DIR_BUFFER_SIZE=44
-# else ifneq (,$(filter spiffs, $(USEMODULE)))
-#     SPIFFS_NB_FD ?= 8
-#     CFLAGS += '-DSPIFFS_FS_FD_SPACE_SIZE=(32 * $(SPIFFS_NB_FD))'
-# endif
-
+# chip8emulator specific
 CFLAGS += -DCHIP8EMU_NO_THREAD
 
 include $(RIOTBASE)/Makefile.include
