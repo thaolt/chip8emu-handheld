@@ -82,6 +82,9 @@ static mtd_dev_t *mtd1 = (mtd_dev_t*)&mtd_sdcard_devs[0];
 mutex_t mtx_cpu;
 pthread_mutexattr_t mtxattr_cpu;
 
+mutex_t mtx_disp;
+pthread_mutexattr_t mtxattr_disp;
+
 void *shell_thread(void *parameter) {
     (void) parameter;
     char line_buf[SHELL_DEFAULT_BUFSIZE];
@@ -106,6 +109,7 @@ int chip8emu_opcode_handler_D(chip8emu* emu) {
     memcpy(sprite, emu->memory + (emu->I * sizeof (uint8_t)), height);
 
     emu->V[0xF] = 0;
+    pthread_mutex_lock(&mtx_disp);
     for (uint8_t y = 0; y < height; y++) {
         for (uint8_t x = 0; x < 8; x++) {
             int dx = (xo + x); /* display x or dest x*/
@@ -118,6 +122,7 @@ int chip8emu_opcode_handler_D(chip8emu* emu) {
             }
         }
     }
+    pthread_mutex_unlock(&mtx_disp);
     emu->pc += 2;
     return C8ERR_OK;
 }
@@ -131,7 +136,9 @@ int chip8emu_opcode_handler_0(chip8emu* cpu) {
     case 0x00E0: /* clear screen */
         memset(cpu->gfx, 0, 64*32);
         cpu->pc += 2;
+        pthread_mutex_lock(&mtx_disp);
         u8g2_ClearBuffer(&u8g2);
+        pthread_mutex_unlock(&mtx_disp);
         break;
 
     case 0x00EE: /* subroutine return */
@@ -157,7 +164,9 @@ void beep_callback(chip8emu* cpu) {
 void *disp_thread(void *parameter) {
     (void) parameter;
     while (true) {
+        pthread_mutex_lock(&mtx_disp);
         u8g2_SendBuffer(&u8g2);
+        pthread_mutex_unlock(&mtx_disp);
         xtimer_usleep(22222);
     }
     return NULL;
@@ -239,6 +248,9 @@ int main(void)
 
     pthread_mutexattr_init(&mtxattr_cpu);
     pthread_mutex_init(&mtx_cpu, &mtxattr_cpu);
+
+    pthread_mutexattr_init(&mtxattr_disp);
+    pthread_mutex_init(&mtx_disp, &mtxattr_disp);
 
 
 
