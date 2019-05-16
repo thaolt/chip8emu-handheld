@@ -8,6 +8,7 @@
 #include "time.h"
 
 #include "pthread.h"
+#include "random.h"
 
 #ifndef BOARD_NATIVE
 #include "periph/gpio.h"
@@ -157,6 +158,10 @@ bool keystate_callback(chip8emu* cpu, uint8_t key) {
     return false;
 }
 
+int rand_callback(void) {
+    return (int)random_uint32();
+}
+
 void beep_callback(chip8emu* cpu) {
     (void) cpu;
 }
@@ -194,12 +199,11 @@ void *emu_thread(void *parameter) {
     }
     return NULL;
 }
-    
+
 
 int main(void)
 {
-    srand ( time(NULL) );
-    // random_init(0x9dff63c0);
+    xtimer_init();
     xtimer_sleep(1);
     printf("%s\n", "first line on main");
 
@@ -245,6 +249,7 @@ int main(void)
     pthread_attr_init(&thattr_shell);
     pthread_create(&thid_shell, &thattr_shell, shell_thread, NULL);
 
+    random_init(xtimer_now_usec());
 
     pthread_mutexattr_init(&mtxattr_cpu);
     pthread_mutex_init(&mtx_cpu, &mtxattr_cpu);
@@ -265,6 +270,7 @@ int main(void)
     cpu->draw = &draw_callback;
     cpu->keystate = &keystate_callback;
     cpu->beep = &beep_callback;
+    cpu->rand = &rand_callback;
     cpu->opcode_handlers[0x0] = &chip8emu_opcode_handler_0;
     cpu->opcode_handlers[0xD] = &chip8emu_opcode_handler_D;
 
