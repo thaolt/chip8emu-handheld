@@ -9,7 +9,6 @@ USEPKG += u8g2
 
 ifeq ($(BOARD),native)
 	USEMODULE += u8g2_sdl
-	CFLAGS += -DNATIVE_BOARD
 else
 	FEATURES_REQUIRED += periph_gpio
 	FEATURES_REQUIRED += periph_i2c
@@ -17,6 +16,7 @@ else
 endif
 
 USEMODULE += fmt
+USEMODULE += newlib
 
 # threading
 USEMODULE += xtimer

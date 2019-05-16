@@ -1,15 +1,18 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <inttypes.h>
 
+#include "time.h"
+
 #include "pthread.h"
 
-#ifndef NATIVE_BOARD
+#ifndef BOARD_NATIVE
 #include "periph/gpio.h"
 #include "periph/i2c.h"
-#endif /* !NATIVE_BOARD */
+#endif /* !BOARD_NATIVE */
 
 #ifdef MODULE_MTD_SDCARD
 #include "mtd_sdcard.h"
@@ -26,6 +29,8 @@
 
 #include "shell_commands.h"
 #include "shell.h"
+
+#include "chip8emu.h"
 
 
 #if FATFS_FFCONF_OPT_FS_NORTC == 0
@@ -51,34 +56,7 @@ mtd_sdcard_t mtd_sdcard_devs[SDCARD_SPI_NUM];
 /* always default to first sdcard*/
 static mtd_dev_t *mtd1 = (mtd_dev_t*)&mtd_sdcard_devs[0];
 
-
-
-static const uint8_t logo[] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE0,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0xF8, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x1F, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x3C,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x1E, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x70, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x0E,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x0E, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0xF0, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x1E,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3C, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0xF0, 0x7C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0xF8,
-    0x30, 0x3C, 0x3F, 0xC0, 0x00, 0x0C, 0x77, 0xF0, 0x38, 0x7E, 0x3F, 0xC0,
-    0x00, 0x7E, 0x73, 0xC0, 0x38, 0xE7, 0x06, 0x00, 0x00, 0xFC, 0x71, 0x00,
-    0x38, 0xE3, 0x06, 0x00, 0x01, 0xF0, 0x70, 0x00, 0x38, 0xE3, 0x06, 0x00,
-    0x01, 0xC0, 0x70, 0x00, 0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x70, 0xC0,
-    0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x71, 0xE0, 0x38, 0xE3, 0x06, 0x00,
-    0x03, 0x80, 0x70, 0xE0, 0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x70, 0xF0,
-    0x38, 0xE3, 0x06, 0x00, 0x03, 0x80, 0x70, 0x70, 0x38, 0xE3, 0x06, 0x00,
-    0x03, 0x80, 0xF0, 0x78, 0x38, 0xE3, 0x06, 0x00, 0x03, 0xC1, 0xE0, 0x3C,
-    0x38, 0xE7, 0x06, 0x00, 0x01, 0xE3, 0xE0, 0x3C, 0x38, 0x7E, 0x06, 0x00,
-    0x01, 0xFF, 0xC0, 0x1C, 0x30, 0x3C, 0x06, 0x00, 0x00, 0x7F, 0x80, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00
-};
-
-#ifndef NATIVE_BOARD
+#ifndef BOARD_NATIVE
     /**
      * @brief   RIOT-OS pin maping of U8g2 pin numbers to RIOT-OS GPIO pins.
      * @note    To minimize the overhead, you can implement an alternative for
@@ -98,90 +76,111 @@ static const uint8_t logo[] = {
         (1 << U8X8_PIN_I2C_DATA) +
         (1 << U8X8_PIN_RESET)
     );
-#endif /* !NATIVE_BOARD */
-
-static int _cat(int argc, char **argv)
-{
-    if (argc < 2) {
-        printf("Usage: %s <file>\n", argv[0]);
-        return 1;
-    }
-    /* With newlib, low-level syscalls are plugged to RIOT vfs
-     * on native, open/read/write/close/... are plugged to RIOT vfs */
-#ifdef MODULE_NEWLIB
-    FILE *f = fopen(argv[1], "r");
-    if (f == NULL) {
-        printf("file %s does not exist\n", argv[1]);
-        return 1;
-    }
-    char c;
-    while (fread(&c, 1, 1, f) != 0) {
-        putchar(c);
-    }
-    fclose(f);
-#else
-    int fd = open(argv[1], O_RDONLY);
-    if (fd < 0) {
-        printf("file %s does not exist\n", argv[1]);
-        return 1;
-    }
-    char c;
-    while (read(fd, &c, 1) != 0) {
-        putchar(c);
-    }
-    close(fd);
-#endif
-    return 0;
-}
-
-static int _tee(int argc, char **argv)
-{
-    if (argc != 3) {
-        printf("Usage: %s <file> <str>\n", argv[0]);
-        return 1;
-    }
-
-#ifdef MODULE_NEWLIB
-    FILE *f = fopen(argv[1], "w+");
-    if (f == NULL) {
-        printf("error while trying to create %s\n", argv[1]);
-        return 1;
-    }
-    if (fwrite(argv[2], 1, strlen(argv[2]), f) != strlen(argv[2])) {
-        puts("Error while writing");
-    }
-    fclose(f);
-#else
-    int fd = open(argv[1], O_RDWR | O_CREAT);
-    if (fd < 0) {
-        printf("error while trying to create %s\n", argv[1]);
-        return 1;
-    }
-    if (write(fd, argv[2], strlen(argv[2])) != (ssize_t)strlen(argv[2])) {
-        puts("Error while writing");
-    }
-    close(fd);
-#endif
-    return 0;
-}
-
-static const shell_command_t shell_commands[] = {
-    { "cat", "print the content of a file", _cat },
-    { "tee", "write a string in a file", _tee },
-    { NULL, NULL, NULL }
-};
+#endif /* !BOARD_NATIVE */
 
 void *shell_thread(void *parameter) {
     (void) parameter;
     char line_buf[SHELL_DEFAULT_BUFSIZE];
-    shell_run(shell_commands, line_buf, SHELL_DEFAULT_BUFSIZE);
+    shell_run(NULL, line_buf, SHELL_DEFAULT_BUFSIZE);
     return NULL;
 }
 /** @} */
 
 
+u8g2_t u8g2;
+
+int chip8emu_opcode_handler_D(chip8emu* emu) {
+    /* DXYN: draw(Vx,Vy,N); draw at X,Y width 8, height N sprite from I register */
+    uint8_t xo = emu->V[(emu->opcode & 0x0F00) >> 8]; /* x origin */
+    uint8_t yo = emu->V[(emu->opcode & 0x00F0) >> 4];
+    uint8_t height = emu->opcode & 0x000F;
+    uint8_t sprite[0x10] = {0};
+
+    memcpy(sprite, emu->memory + (emu->I * sizeof (uint8_t)), height);
+
+    emu->V[0xF] = 0;
+    for (uint8_t y = 0; y < height; y++) {
+        for (uint8_t x = 0; x < 8; x++) {
+            int dx = (xo + x); /* display x or dest x*/
+            int dy = (yo + y);
+            if ((sprite[y] & (0x80 >> x)) != 0) { /* 0x80 -> 10000000b */
+                if (!emu->V[0xF] && emu->gfx[(dx + (dy * 64))])
+                    emu->V[0xF] = 1;
+                emu->gfx[dx + (dy * 64)] ^= 1;
+                u8g2_SetDrawColor(&u8g2, emu->gfx[dx + (dy * 64)]);
+                u8g2_DrawBox(&u8g2, dx*2, dy*2, 2, 2);
+            }
+        }
+    }
+    emu->pc += 2;
+    return C8ERR_OK;
+}
+
+void draw_callback(chip8emu* cpu) {
+    (void) cpu;
+}
+
+int chip8emu_opcode_handler_0(chip8emu* cpu) {
+    switch (cpu->opcode) {
+    case 0x00E0: /* clear screen */
+        memset(cpu->gfx, 0, 64*32);
+        cpu->pc += 2;
+        u8g2_ClearBuffer(&u8g2);
+        break;
+
+    case 0x00EE: /* subroutine return */
+        cpu->pc = cpu->stack[--cpu->sp & 0xF] + 2;
+        break;
+
+    default: /* 0NNN: call program at NNN address */
+        // printf("OpCode 0NNN is not implemented\n");
+        break;
+    }
+    return C8ERR_OK;
+}
+
+bool keystate_callback(chip8emu* cpu, uint8_t key) {
+    (void) cpu; (void) key;
+    return false;
+}
+
+void beep_callback(chip8emu* cpu) {
+    (void) cpu;
+}
+
+void *disp_thread(void *parameter) {
+    (void) parameter;
+    while (1) {
+        u8g2_SendBuffer(&u8g2);
+        xtimer_usleep(16666);
+    }
+    return NULL;
+}
+
+chip8emu *cpu;
+
+void *emu_thread(void *parameter) {
+    (void) parameter;
+    uint8_t cycles = 0;
+    while (true) {
+        cycles++;
+        chip8emu_exec_cycle(cpu);
+        if (!(cycles%8)) {
+            chip8emu_timer_tick(cpu);
+        }
+        /* get user's key presses, e.g.: getchar() or SDL_GetKeyState .. */
+
+        /* give some delay */
+        xtimer_usleep(100);
+    }
+    return NULL;
+}
+    
+
 int main(void)
 {
+    srand ( time(NULL) );
+    // random_init(0x9dff63c0);
     xtimer_sleep(1);
     printf("%s\n", "first line on main");
 
@@ -196,8 +195,6 @@ int main(void)
 
     vfs_mount(&sdcard_vfs_mount);
 
-    uint32_t screen = 0;
-    u8g2_t u8g2;
     
     /* initialize the display */
     printf("Initializing display..");
@@ -220,41 +217,43 @@ int main(void)
     u8g2_SetPowerSave(&u8g2, 0);
 #endif
 
+    u8g2_ClearDisplay(&u8g2);
+    u8g2_SetBitmapMode(&u8g2, false); /* no transparent */
+
     pthread_t thid_shell;
     pthread_attr_t thattr_shell;
 
     pthread_attr_init(&thattr_shell);
     pthread_create(&thid_shell, &thattr_shell, shell_thread, NULL);
 
+    pthread_t thid_disp;
+    pthread_attr_t thattr_disp;
+
+    pthread_attr_init(&thattr_disp);
+    pthread_create(&thid_disp, &thattr_disp, disp_thread, NULL);
+
+    cpu = chip8emu_new();
+
+    cpu->draw = &draw_callback;
+    cpu->keystate = &keystate_callback;
+    cpu->beep = &beep_callback;
+    cpu->opcode_handlers[0x0] = &chip8emu_opcode_handler_0;
+    cpu->opcode_handlers[0xD] = &chip8emu_opcode_handler_D;
+
     /* start drawing in a loop */
-    printf("Drawing on screen.\n");
+    printf("Loading ROM..\n");
 
-    while (1) {
-        u8g2_FirstPage(&u8g2);
+    chip8emu_load_rom(cpu, "/sdcard/TETRIS");
+    printf("Loading ROM..OK.\n");
 
-        do {
-            u8g2_SetDrawColor(&u8g2, 1);
-            u8g2_SetFont(&u8g2, u8g2_font_helvB12_tf);
+    pthread_t thid_emu;
+    pthread_attr_t thattr_emu;
 
-            switch (screen) {
-                case 0:
-                    u8g2_DrawStr(&u8g2, 12, 22, "THIS");
-                    break;
-                case 1:
-                    u8g2_DrawStr(&u8g2, 24, 22, "IS");
-                    break;
-                case 2:
-                    u8g2_DrawBitmap(&u8g2, 0, 0, 8, 32, logo);
-                    break;
-            }
-        } while (u8g2_NextPage(&u8g2));
-
-        /* show screen in next iteration */
-        screen = (screen + 1) % 3;
-
-        /* sleep a little */
-        xtimer_sleep(1);
-    }
+    pthread_attr_init(&thattr_emu);
+    pthread_create(&thid_emu, &thattr_emu, emu_thread, NULL);
+    
+    pthread_join(thid_emu,NULL);
 
     return 0;
 }
+
