@@ -104,10 +104,9 @@ int chip8emu_opcode_handler_D(chip8emu* emu) {
             int dx = (xo + x); /* display x or dest x*/
             int dy = (yo + y);
             if ((sprite[y] & (0x80 >> x)) != 0) { /* 0x80 -> 10000000b */
-                if (!emu->V[0xF] && emu->gfx[(dx + (dy * 64))])
+                if (!emu->V[0xF] && emu->gfx[(dx + (dy * 64))]) 
                     emu->V[0xF] = 1;
-                emu->gfx[dx + (dy * 64)] ^= 1;
-                u8g2_SetDrawColor(&u8g2, emu->gfx[dx + (dy * 64)]);
+                u8g2_SetDrawColor(&u8g2, emu->gfx[dx + (dy * 64)] ^= 1);
                 u8g2_DrawBox(&u8g2, dx*2, dy*2, 2, 2);
             }
         }
@@ -171,7 +170,7 @@ void *emu_thread(void *parameter) {
         /* get user's key presses, e.g.: getchar() or SDL_GetKeyState .. */
 
         /* give some delay */
-        xtimer_usleep(100);
+        xtimer_usleep(300);
     }
     return NULL;
 }
