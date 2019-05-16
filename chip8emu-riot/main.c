@@ -78,6 +78,10 @@ static mtd_dev_t *mtd1 = (mtd_dev_t*)&mtd_sdcard_devs[0];
     );
 #endif /* !BOARD_NATIVE */
 
+
+mutex_t mtx_cpu;
+pthread_mutexattr_t mtxattr_cpu;
+
 void *shell_thread(void *parameter) {
     (void) parameter;
     char line_buf[SHELL_DEFAULT_BUFSIZE];
@@ -88,6 +92,9 @@ void *shell_thread(void *parameter) {
 
 
 u8g2_t u8g2;
+
+chip8emu *cpu;
+
 
 int chip8emu_opcode_handler_D(chip8emu* emu) {
     /* DXYN: draw(Vx,Vy,N); draw at X,Y width 8, height N sprite from I register */
@@ -149,28 +156,32 @@ void beep_callback(chip8emu* cpu) {
 
 void *disp_thread(void *parameter) {
     (void) parameter;
-    while (1) {
+    while (true) {
         u8g2_SendBuffer(&u8g2);
-        xtimer_usleep(16666);
+        xtimer_usleep(22222);
     }
     return NULL;
 }
 
-chip8emu *cpu;
+void *timer_thread(void *parameter) {
+    (void) parameter;
+    while (true) {
+        pthread_mutex_lock(&mtx_cpu);
+        chip8emu_timer_tick(cpu);
+        pthread_mutex_unlock(&mtx_cpu);
+        xtimer_usleep(4000);
+    }
+    return NULL;
+}
+
 
 void *emu_thread(void *parameter) {
     (void) parameter;
-    uint8_t cycles = 0;
     while (true) {
-        cycles++;
+        pthread_mutex_lock(&mtx_cpu);
         chip8emu_exec_cycle(cpu);
-        if (!(cycles%8)) {
-            chip8emu_timer_tick(cpu);
-        }
-        /* get user's key presses, e.g.: getchar() or SDL_GetKeyState .. */
-
-        /* give some delay */
-        xtimer_usleep(300);
+        pthread_mutex_unlock(&mtx_cpu);
+        xtimer_usleep(150);
     }
     return NULL;
 }
@@ -225,6 +236,12 @@ int main(void)
     pthread_attr_init(&thattr_shell);
     pthread_create(&thid_shell, &thattr_shell, shell_thread, NULL);
 
+
+    pthread_mutexattr_init(&mtxattr_cpu);
+    pthread_mutex_init(&mtx_cpu, &mtxattr_cpu);
+
+
+
     pthread_t thid_disp;
     pthread_attr_t thattr_disp;
 
@@ -245,11 +262,18 @@ int main(void)
     chip8emu_load_rom(cpu, "/sdcard/TETRIS");
     printf("Loading ROM..OK.\n");
 
+
     pthread_t thid_emu;
     pthread_attr_t thattr_emu;
 
     pthread_attr_init(&thattr_emu);
     pthread_create(&thid_emu, &thattr_emu, emu_thread, NULL);
+
+    pthread_t thid_timer;
+    pthread_attr_t thattr_timer;
+
+    pthread_attr_init(&thattr_timer);
+    pthread_create(&thid_timer, &thattr_timer, timer_thread, NULL);
     
     pthread_join(thid_emu,NULL);
 
