@@ -64,9 +64,9 @@ static mtd_dev_t *mtd1 = (mtd_dev_t*)&mtd_sdcard_devs[0];
      *          u8x8_gpio_and_delay_riotos.
      */
     static gpio_t pins[] = {
-        [U8X8_PIN_I2C_CLOCK] = GPIO_PIN(PORT_B, 8),
-        [U8X8_PIN_I2C_DATA] = GPIO_PIN(PORT_B, 9),
-        [U8X8_PIN_RESET] = GPIO_UNDEF
+        [U8X8_PIN_I2C_CLOCK] = LCD_I2C_SCL,
+        [U8X8_PIN_I2C_DATA] = LCD_I2C_SDA,
+        [U8X8_PIN_RESET] = LCD_I2C_RST
     };
 
     /**
